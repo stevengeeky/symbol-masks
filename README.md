@@ -4,6 +4,12 @@ Mask symbols in your code with custom styles and replacement text.
 
 ![Demo](screenshots/demo.gif)
 
+## Prerequisites
+
+### Windows
+
+You will need to install [Windows Build Tools](https://www.npmjs.com/package/windows-build-tools) before installing this extension for it to work properly.
+
 ## Usage
 
 Specify a pattern that will match a symbol to be masked in your settings.json file:
