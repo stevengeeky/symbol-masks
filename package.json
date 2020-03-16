@@ -1,0 +1,200 @@
+{
+	"name": "symbol-masks",
+	"displayName": "Symbol Masks",
+	"description": "Mask symbols in your document with prettier text",
+	"repository": {
+		"url": "https://github.com/stevengeeky/symbol-masks"
+	},
+	"version": "0.0.1",
+	"engines": {
+		"vscode": "^1.43.0"
+	},
+	"categories": [
+		"Other"
+	],
+	"activationEvents": [
+		"*"
+	],
+	"icon": "https://github.com/stevengeeky/symbol-masks/screenshots/mask.png",
+	"contributes": {
+		"configuration": {
+			"title": "Symbol Masks",
+			"properties": {
+				"symbolMasks.masks": {
+					"type": "array",
+					"description": "An array of language masks",
+					"properties": {
+						"selector": {
+							"type": "string",
+							"description": "The document selector that the masks within this object should be applied to (can be a language (i.e. 'typescript'), a filename path (i.e. '**/*.js'), or an array of filename paths/languages (i.e. ['typescript', '**/*.js']))",
+							"default": "typescript"
+						},
+						"patterns": {
+							"type": "array",
+							"required": [
+								"pattern"
+							],
+							"properties": {
+								"pattern": {
+									"type": "string",
+									"description": "The regex to use to match all symbols this mask will get applied to"
+								},
+								"ignoreCase": {
+									"type": "boolean",
+									"description": "Whether or not to set the 'ignore case' flag when creating a regex from the given pattern",
+									"default": "false"
+								},
+								"replace": {
+									"oneOf": [{
+										"type": "string",
+										"description": "The string that will visually replace all symbols that get matched"
+									}, {
+										"type": "object",
+										"description": "Case matching for pattern results",
+										"propertyNames": true,
+										"properties": {
+											"scope": {
+												"type": "string",
+												"description": "The (optional) scope to validate this match result against"
+											},
+											"text": {
+												"type": "string",
+												"description": "The text to show in place of this match result"
+											},
+											"hover": {
+												"type": "string",
+												"default": "You hovered over me!"
+											},
+											"backgroundColor": {
+												"type": "string",
+												"default": "#ffffff20"
+											},
+											"border": {
+												"type": "string",
+												"default": "1px solid #aaa"
+											},
+											"borderColor": {
+												"type": "string",
+												"default": "gray"
+											},
+											"color": {
+												"type": "string",
+												"default": "red"
+											},
+											"fontStyle": {
+												"type": "string",
+												"default": "italic"
+											},
+											"fontWeight": {
+												"type": "string",
+												"default": "bold"
+											},
+											"css": {
+												"type": "string",
+												"default": "text-decoration: underline"
+											}
+										}
+									}]
+								},
+								"scope": {
+									"type": "string",
+									"description": "The (optional) textmate scope this mask should be applied to (Can be found via Ctrl+Shift+P with the command 'Developer: Inspect Editor Tokens and Scopes')",
+									"default": "keyword.operator"
+								},
+								"style": {
+									"type": "object",
+									"description": "The style used to decorate all replaced results",
+									"required": [],
+									"properties": {
+										"backgroundColor": {
+											"type": "string",
+											"default": "#ffffff20"
+										},
+										"border": {
+											"type": "string",
+											"default": "1px solid #aaa"
+										},
+										"borderColor": {
+											"type": "string",
+											"default": "gray"
+										},
+										"color": {
+											"type": "string",
+											"default": "red"
+										},
+										"fontStyle": {
+											"type": "string",
+											"default": "italic"
+										},
+										"fontWeight": {
+											"type": "string",
+											"default": "bold"
+										},
+										"css": {
+											"type": "string",
+											"default": "text-decoration: underline"
+										}
+									}
+								}
+							}
+						}
+					},
+					"default": [
+						{
+							"language": "typescript",
+							"patterns": [
+								{
+									"pattern": "(?<=[\\b\\s])===(?=[\\b\\s])",
+									"replace": "≡"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"configurationDefaults": {
+			"symbolMasks.masks": [
+				{
+					"language": "typescript",
+					"patterns": [
+						{
+							"pattern": "(?<=[\\b\\s])===(?=[\\b\\s])",
+							"replace": "≡",
+							"scope": "keyword.operator",
+							"style": {
+								"fontWeight": "bold"
+							}
+						}
+					]
+				}
+			]
+		}
+	},
+	"main": "./out/extension.js",
+	"scripts": {
+		"vscode:prepublish": "yarn run compile",
+		"compile": "tsc -p ./",
+		"lint": "eslint src --ext ts",
+		"watch": "tsc -watch -p ./",
+		"pretest": "yarn run compile && yarn run lint",
+		"test": "node ./out/test/runTest.js"
+	},
+	"devDependencies": {
+		"@types/glob": "^7.1.1",
+		"@types/mocha": "^7.0.1",
+		"@types/node": "^12.11.7",
+		"@types/vscode": "^1.43.0",
+		"@typescript-eslint/eslint-plugin": "^2.18.0",
+		"@typescript-eslint/parser": "^2.18.0",
+		"eslint": "^6.8.0",
+		"glob": "^7.1.6",
+		"mocha": "^7.0.1",
+		"typescript": "^3.7.5",
+		"vscode-test": "^1.3.0"
+	},
+	"dependencies": {
+		"safe-eval": "^0.4.1",
+		"vscode-textmate": "^4.4.0"
+	}
+}
