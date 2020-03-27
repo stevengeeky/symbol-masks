@@ -108,6 +108,7 @@ export default class MaskController {
 	}
 
 	public setEditor(editor?: vscode.TextEditor) {
+		this.clear();
 		this.editor = editor;
 	}
 
@@ -133,7 +134,7 @@ export default class MaskController {
 		if (!this.decorationTypeMap.has(id)) {
 			this.decorationTypeMap.set(id, vscode.window.createTextEditorDecorationType({
 				// Hide the actual character
-				textDecoration: mask.text ? `none; display: none` : "none",
+				textDecoration: mask.text ? `none; font-size: 0` : "none",
 				backgroundColor: mask.backgroundColor,
 				border: mask.border,
 				borderColor: mask.borderColor,

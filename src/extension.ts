@@ -71,6 +71,9 @@ export function activate(context: vscode.ExtensionContext) {
 	let timeout: NodeJS.Timeout;
 	let languageScopeName: string = "";
 
+	/**
+	 * Apply the user's masks to the currently active document
+	 */
 	const updateMasks = async () => {
 		try {
 			const document = scopedDocument.getDocument();
@@ -103,6 +106,10 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	};
 
+	/**
+	 * Wait a little before updating the masks
+	 * To avoid slowing the extension down
+	 */
 	const debounceUpdateMasks = () => {
 		if (timeout) {
 			clearTimeout(timeout);
@@ -110,6 +117,9 @@ export function activate(context: vscode.ExtensionContext) {
 		timeout = setTimeout(updateMasks, 50);
 	};
 
+	/**
+	 * Setup to load the textmate grammar for the document
+	 */
 	languageScopeName = getLanguageScopeName(maskController.getEditor()?.document?.languageId) || "";
 	scopedDocument.setDocument(maskController.getEditor()?.document);
 	maskController.setScopedDocument(scopedDocument);
@@ -126,6 +136,9 @@ export function activate(context: vscode.ExtensionContext) {
 		debounceUpdateMasks();
 	});
 
+	/**
+	 * Update masks when the text editor changes
+	 */
 	vscode.window.onDidChangeActiveTextEditor(async editor => {
 		maskController.setEditor(editor);
 		scopedDocument.setDocument(editor?.document);
@@ -138,6 +151,11 @@ export function activate(context: vscode.ExtensionContext) {
 		debounceUpdateMasks();
 	}, null, context.subscriptions);
 
+	/**
+	 * Update masks when the text editor is saved
+	 * (because the file could have just obtained a grammar,
+	 * or obtained a different one)
+	 */
 	vscode.workspace.onDidSaveTextDocument(async _ => {
 		// Get the language scope name for the saved document and retokenize it
 		languageScopeName = getLanguageScopeName(maskController.getEditor()?.document.languageId) || "";
@@ -147,6 +165,9 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}, null, context.subscriptions);
 
+	/**
+	 * Update masks when the document changes
+	 */
 	vscode.window.onDidChangeTextEditorSelection(async event => {
 		// If the document changed, retokenize it
 		if (languageScopeName && scopedDocument.getDocument()?.isDirty) {
@@ -158,6 +179,9 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 	}, null, context.subscriptions);
 
+	/**
+	 * Update masks when settings are updated
+	 */
 	vscode.workspace.onDidChangeConfiguration(async event => {
 		if (event.affectsConfiguration("symbolMasks")) {
 			maskController.clear();
