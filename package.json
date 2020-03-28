@@ -181,7 +181,7 @@
 		"compile": "tsc -p ./",
 		"lint": "eslint src --ext ts",
 		"watch": "tsc -watch -p ./",
-		"postinstall": "./node_modules/.bin/electron-rebuild -v 7.1.0"
+		"postinstall": "./node_modules/.bin/electron-rebuild -f -v 7.1.0"
 	},
 	"devDependencies": {
 		"@types/glob": "^7.1.1",
