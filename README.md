@@ -21,7 +21,7 @@ Specify a pattern that will match a symbol to be masked in your settings.json fi
     "patterns": [
         {
             "pattern": "(?<=\\b)lambda(?=\\b)",
-            "replace": "value": "λ",
+            "replace": "λ",
             "style": {
               "fontWeight": "bold"
             }
@@ -44,11 +44,11 @@ For efficiency, you can also match many symbols at once and map each of them to 
             "pattern": "(?<=\\b)(lambda|omega)(?=\\b)",
             "replace": {
               "lambda": {
-                  "value": "λ",
+                  "text": "λ",
                   "fontWeight": "bold"
               },
               "omega": {
-                  "value": "ω"
+                  "text": "ω"
               }
             }
         }
