@@ -93,6 +93,12 @@ export default class MaskController {
 
 	private editor: vscode.TextEditor | undefined;
 
+	/**
+	 * The decoration keys applied during the current
+	 * beginUpdate/endUpdate pass (null outside a pass)
+	 */
+	private usedKeys: Set<string> | null = null;
+
 	constructor(editor?: vscode.TextEditor, scopedDocument?: ScopedDocument) {
 		this.editor = editor;
 		this.scopedDocument = scopedDocument || null;
@@ -113,18 +119,74 @@ export default class MaskController {
 	}
 
 	/**
+	 * Remove a decoration type from the editor and dispose of it
+	 */
+	private drop(key: string) {
+		const decorationType = this.decorationTypeMap.get(key);
+		if (decorationType) {
+			if (this.editor) {
+				this.editor.setDecorations(decorationType, []);
+			}
+			decorationType.dispose();
+		}
+		this.decorationTypeMap.delete(key);
+	}
+
+	/**
 	 * Clear all existing masks
 	 */
 	public clear () {
-		if (this.editor) {
-			for (const key of this.decorationTypeMap.keys()) {
-				const decorationType = this.decorationTypeMap.get(key);
-				if (decorationType) {
-					this.editor.setDecorations(decorationType, []);
-				}
+		for (const key of Array.from(this.decorationTypeMap.keys())) {
+			this.drop(key);
+		}
+		this.usedKeys = null;
+	}
+
+	/**
+	 * Clear all masks and forget the editor.
+	 * Call this when the editor is no longer visible.
+	 */
+	public dispose() {
+		this.clear();
+		this.editor = undefined;
+		this.scopedDocument = null;
+	}
+
+	/**
+	 * Start a pass over all patterns for this editor. Every call to
+	 * `apply` between `beginUpdate` and `endUpdate` is remembered, and
+	 * `endUpdate` removes the decorations of any pattern that was not
+	 * applied during the pass (i.e. it was removed from the settings).
+	 */
+	public beginUpdate() {
+		this.usedKeys = new Set();
+	}
+
+	/**
+	 * Finish a pass started with `beginUpdate`
+	 */
+	public endUpdate() {
+		const used = this.usedKeys;
+		this.usedKeys = null;
+		if (!used) {
+			return;
+		}
+		for (const key of Array.from(this.decorationTypeMap.keys())) {
+			if (!used.has(key)) {
+				this.drop(key);
 			}
 		}
-		this.decorationTypeMap.clear();
+	}
+
+	/**
+	 * Combine the fontWeight and custom css of a mask into the single
+	 * `fontWeight` slot vscode gives us (the custom css rides along after a `;`)
+	 */
+	private static fontWeight(mask: Mask): string | undefined {
+		if (mask.css) {
+			return (mask.fontWeight || "inherit") + ";" + mask.css;
+		}
+		return mask.fontWeight;
 	}
 
 	/**
@@ -132,6 +194,7 @@ export default class MaskController {
 	 */
 	private initialize(id: string, mask: Mask) {
 		if (!this.decorationTypeMap.has(id)) {
+			const fontWeight = MaskController.fontWeight(mask);
 			this.decorationTypeMap.set(id, vscode.window.createTextEditorDecorationType({
 				// Hide the actual character
 				textDecoration: mask.text ? `none; font-size: 0` : "none",
@@ -140,7 +203,7 @@ export default class MaskController {
 				borderColor: mask.borderColor,
 				color: mask.color,
 				fontStyle: mask.fontStyle,
-				fontWeight: mask.fontWeight + (mask.css ? ";" + mask.css : ""),
+				fontWeight,
 				before: {
 					// Render the mask text if provided
 					contentText: typeof mask.text === "string" ? mask.text : undefined,
@@ -149,7 +212,7 @@ export default class MaskController {
 					borderColor: mask.borderColor,
 					color: mask.color,
 					fontStyle: mask.fontStyle,
-					fontWeight: mask.fontWeight + (mask.css ? ";" + mask.css : "")
+					fontWeight
 				}
 			}));
 		}
@@ -165,8 +228,13 @@ export default class MaskController {
 			return;
 		}
 
-		if (!this.decorationTypeMap.has(pattern.source)) {
-			this.initialize(pattern.source, mask);
+		// Two patterns can share a source but differ in flags (i.e. ignoreCase)
+		const baseKey = `${pattern.source}/${pattern.flags}`;
+		if (!this.decorationTypeMap.has(baseKey)) {
+			this.initialize(baseKey, mask);
+		}
+		if (this.usedKeys) {
+			this.usedKeys.add(baseKey);
 		}
 
 		const text = this.editor.document.getText();
@@ -272,7 +340,7 @@ export default class MaskController {
 			// and it should be decorated according to the optionally
 			// provided scope (if one was provided), then decorate it
 			if (decorateSymbol) {
-				let decorationKey = pattern.source;
+				let decorationKey = baseKey;
 				let hover = mask.hover;
 
 				if (matchReplace?.text) {
@@ -310,22 +378,28 @@ export default class MaskController {
 			if (decorationType) {
 				this.editor.setDecorations(decorationType, decorationOptions.get(decorationKey) || []);
 			}
+			if (this.usedKeys) {
+				this.usedKeys.add(decorationKey);
+			}
 		}
 
-		const decorationType = this.decorationTypeMap.get(pattern.source);
+		const decorationType = this.decorationTypeMap.get(baseKey);
 		if (decorationType) {
-			this.editor.setDecorations(decorationType, decorationOptions.get(pattern.source) || []);
+			this.editor.setDecorations(decorationType, decorationOptions.get(baseKey) || []);
 		}
 
-		// Clear all masks which were not matched but which are
-		// still cached
+		// Match based replacements of this pattern which had no matches
+		// this time (i.e. the cursor is on the only one) are emptied but
+		// kept, so their decoration types are not recreated on every keystroke
 		for (const key of this.decorationTypeMap.keys()) {
-			if (key !== pattern.source && !(matchReplaceKeys.has(key))) {
-				const decorationType = this.decorationTypeMap.get(key);
-				if (decorationType) {
-					this.editor.setDecorations(decorationType, []);
+			if (key.startsWith(baseKey + "@@@") && !matchReplaceKeys.has(key)) {
+				const stale = this.decorationTypeMap.get(key);
+				if (stale) {
+					this.editor.setDecorations(stale, []);
 				}
-				this.decorationTypeMap.delete(key);
+				if (this.usedKeys) {
+					this.usedKeys.add(key);
+				}
 			}
 		}
 	}
