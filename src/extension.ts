@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as vsctm from "vscode-textmate";
 import * as fs from "fs";
 import * as path from "path";
-import MaskController, { Mask } from "./mask-controller";
+import MaskController from "./mask-controller";
 import ScopedDocument from "./scoped-document";
 
 /**
@@ -62,120 +62,210 @@ const getLanguageScopeName = (languageId?: string) => {
 	return null;
 };
 
+/**
+ * Everything the extension keeps for one visible editor
+ */
+interface EditorState {
+	editor: vscode.TextEditor;
+	maskController: MaskController;
+	scopedDocument: ScopedDocument;
+	/**
+	 * The textmate scope name of the document's language ("" if it has no grammar)
+	 */
+	languageScopeName: string;
+	/**
+	 * The pending debounced update, if any
+	 */
+	timeout?: NodeJS.Timeout;
+}
+
+/**
+ * Build the RegExp flags for a pattern from the user's settings
+ */
+export function patternFlags(pattern: { ignoreCase?: boolean, multiline?: boolean }): string {
+	return "g" + (pattern.ignoreCase ? "i" : "") + (pattern.multiline ? "m" : "");
+}
+
 export function activate(context: vscode.ExtensionContext) {
-	// A map from language id => mask
-	const maskMap = new Map<string, any>();
-	const maskController = new MaskController(vscode.window.activeTextEditor);
-	const scopedDocument = new ScopedDocument(maskController.getEditor()?.document);
+	// Every visible editor gets its own masks (#10)
+	const states = new Map<vscode.TextEditor, EditorState>();
 	let configuration = vscode.workspace.getConfiguration();
-	let timeout: NodeJS.Timeout;
-	let languageScopeName: string = "";
 
 	/**
-	 * Apply the user's masks to the currently active document
+	 * Apply the user's masks to one visible editor
 	 */
-	const updateMasks = async () => {
+	const updateMasks = (state: EditorState) => {
 		try {
-			const document = scopedDocument.getDocument();
-			const userMasks = (configuration.get("symbolMasks.masks") as any);
+			const document = state.editor.document;
+			const userMasks = (configuration.get("symbolMasks.masks") as any[]) || [];
 
-			if (document) {
-				for (let mask of userMasks) {
-					if (vscode.languages.match(mask.language, document) > 0) {
-						maskMap.set(mask.language, mask.pattern);
-						for (const pattern of mask.patterns) {
-							const regex = new RegExp(pattern.pattern, pattern.ignoreCase ? "ig" : "g");
-							maskController.apply(regex, {
-								text: pattern.replace,
-								scope: pattern.scope,
-								hover: pattern.hover,
-								backgroundColor: pattern.style?.backgroundColor,
-								border: pattern.style?.border,
-								borderColor: pattern.style?.borderColor,
-								color: pattern.style?.color,
-								fontStyle: pattern.style?.fontStyle,
-								fontWeight: pattern.style?.fontWeight,
-								css: pattern.style?.css
-							});
-						}
+			state.maskController.beginUpdate();
+			for (const mask of userMasks) {
+				if (!mask || !mask.patterns || vscode.languages.match(mask.language, document) <= 0) {
+					continue;
+				}
+				for (const pattern of mask.patterns) {
+					if (!pattern || typeof pattern.pattern !== "string") {
+						continue;
 					}
+					let regex: RegExp;
+					try {
+						regex = new RegExp(pattern.pattern, patternFlags(pattern));
+					} catch (err) {
+						console.error(`symbol-masks: invalid pattern ${JSON.stringify(pattern.pattern)}: ${err}`);
+						continue;
+					}
+					state.maskController.apply(regex, {
+						text: pattern.replace,
+						scope: pattern.scope,
+						hover: pattern.hover,
+						backgroundColor: pattern.style?.backgroundColor,
+						border: pattern.style?.border,
+						borderColor: pattern.style?.borderColor,
+						color: pattern.style?.color,
+						fontStyle: pattern.style?.fontStyle,
+						fontWeight: pattern.style?.fontWeight,
+						css: pattern.style?.css
+					});
 				}
 			}
+			state.maskController.endUpdate();
 		} catch (err) {
 			console.error(err);
 		}
 	};
 
 	/**
-	 * Wait a little before updating the masks
-	 * To avoid slowing the extension down
+	 * Wait a little before updating the masks of an editor
+	 * to avoid slowing the extension down
 	 */
-	const debounceUpdateMasks = () => {
-		if (timeout) {
-			clearTimeout(timeout);
+	const debounceUpdateMasks = (state: EditorState) => {
+		if (state.timeout) {
+			clearTimeout(state.timeout);
 		}
-		timeout = setTimeout(updateMasks, 50);
+		state.timeout = setTimeout(() => {
+			state.timeout = undefined;
+			// The editor may have gone away while we waited
+			if (states.get(state.editor) === state) {
+				updateMasks(state);
+			}
+		}, 50);
 	};
 
 	/**
-	 * Setup to load the textmate grammar for the document
+	 * (Re)load the textmate grammar for an editor's document and tokenize it
 	 */
-	languageScopeName = getLanguageScopeName(maskController.getEditor()?.document?.languageId) || "";
-	scopedDocument.setDocument(maskController.getEditor()?.document);
-	maskController.setScopedDocument(scopedDocument);
-
-	registry.loadGrammar(languageScopeName)
-	.then(grammar => {
-		scopedDocument.setGrammar(grammar);
-		scopedDocument.tokenize();
-		debounceUpdateMasks();
-	})
-	.catch(err => {
-		console.log(err);
-		scopedDocument.clearGrammar();
-		debounceUpdateMasks();
-	});
+	const loadGrammar = async (state: EditorState) => {
+		state.languageScopeName = getLanguageScopeName(state.editor.document.languageId) || "";
+		if (!state.languageScopeName) {
+			state.scopedDocument.clearGrammar();
+			return;
+		}
+		try {
+			state.scopedDocument.setGrammar(await registry.loadGrammar(state.languageScopeName));
+			state.scopedDocument.tokenize();
+		} catch (err) {
+			console.log(err);
+			state.scopedDocument.clearGrammar();
+		}
+	};
 
 	/**
-	 * Update masks when the text editor changes
+	 * Start tracking a newly visible editor
 	 */
-	vscode.window.onDidChangeActiveTextEditor(async editor => {
-		maskController.setEditor(editor);
-		scopedDocument.setDocument(editor?.document);
-		languageScopeName = getLanguageScopeName(maskController.getEditor()?.document.languageId) || "";
-		// Tokenize the new document, if possible
-		if (editor && languageScopeName) {
-			scopedDocument.setGrammar(await registry.loadGrammar(languageScopeName));
-			scopedDocument.tokenize();
+	const track = async (editor: vscode.TextEditor) => {
+		if (states.has(editor)) {
+			return;
 		}
-		debounceUpdateMasks();
+		const scopedDocument = new ScopedDocument(editor.document);
+		const maskController = new MaskController(editor, scopedDocument);
+		const state: EditorState = { editor, maskController, scopedDocument, languageScopeName: "" };
+		states.set(editor, state);
+		await loadGrammar(state);
+		debounceUpdateMasks(state);
+	};
+
+	/**
+	 * Stop tracking an editor that is no longer visible
+	 */
+	const untrack = (editor: vscode.TextEditor) => {
+		const state = states.get(editor);
+		if (!state) {
+			return;
+		}
+		if (state.timeout) {
+			clearTimeout(state.timeout);
+		}
+		state.maskController.dispose();
+		states.delete(editor);
+	};
+
+	/**
+	 * Every tracked editor showing the given document
+	 */
+	const statesFor = (document: vscode.TextDocument) => {
+		const result: EditorState[] = [];
+		for (const state of states.values()) {
+			if (state.editor.document === document) {
+				result.push(state);
+			}
+		}
+		return result;
+	};
+
+	/**
+	 * Make the set of tracked editors equal to the set of visible editors
+	 */
+	const syncVisibleEditors = async (editors: ReadonlyArray<vscode.TextEditor>) => {
+		const visible = new Set(editors);
+		for (const editor of Array.from(states.keys())) {
+			if (!visible.has(editor)) {
+				untrack(editor);
+			}
+		}
+		await Promise.all(editors.map(track));
+	};
+
+	syncVisibleEditors(vscode.window.visibleTextEditors);
+
+	/**
+	 * Track editors as they are opened and closed side by side (#10)
+	 */
+	vscode.window.onDidChangeVisibleTextEditors(editors => {
+		syncVisibleEditors(editors);
 	}, null, context.subscriptions);
 
 	/**
-	 * Update masks when the text editor is saved
+	 * The document of a visible editor changed: retokenize it and mask it again
+	 */
+	vscode.workspace.onDidChangeTextDocument(event => {
+		for (const state of statesFor(event.document)) {
+			if (state.languageScopeName) {
+				state.scopedDocument.tokenize();
+			}
+			debounceUpdateMasks(state);
+		}
+	}, null, context.subscriptions);
+
+	/**
+	 * Reload the grammar when a document is saved
 	 * (because the file could have just obtained a grammar,
 	 * or obtained a different one)
 	 */
-	vscode.workspace.onDidSaveTextDocument(async _ => {
-		// Get the language scope name for the saved document and retokenize it
-		languageScopeName = getLanguageScopeName(maskController.getEditor()?.document.languageId) || "";
-		if (maskController.getEditor() && languageScopeName) {
-			scopedDocument.setGrammar(await registry.loadGrammar(languageScopeName));
-			scopedDocument.tokenize();
+	vscode.workspace.onDidSaveTextDocument(async document => {
+		for (const state of statesFor(document)) {
+			await loadGrammar(state);
+			debounceUpdateMasks(state);
 		}
 	}, null, context.subscriptions);
 
 	/**
-	 * Update masks when the document changes
+	 * Reveal the symbol under the cursor of the editor whose selection moved
 	 */
-	vscode.window.onDidChangeTextEditorSelection(async event => {
-		// If the document changed, retokenize it
-		if (languageScopeName && scopedDocument.getDocument()?.isDirty) {
-			scopedDocument.tokenize();
-		}
-
-		if (event.textEditor === maskController.getEditor()) {
-			debounceUpdateMasks();
+	vscode.window.onDidChangeTextEditorSelection(event => {
+		const state = states.get(event.textEditor);
+		if (state) {
+			debounceUpdateMasks(state);
 		}
 	}, null, context.subscriptions);
 
@@ -184,15 +274,21 @@ export function activate(context: vscode.ExtensionContext) {
 	 */
 	vscode.workspace.onDidChangeConfiguration(async event => {
 		if (event.affectsConfiguration("symbolMasks")) {
-			maskController.clear();
 			configuration = vscode.workspace.getConfiguration();
-			languageScopeName = getLanguageScopeName(maskController.getEditor()?.document.languageId) || "";
-			if (languageScopeName) {
-				scopedDocument.tokenize();
+			for (const state of states.values()) {
+				state.maskController.clear();
+				debounceUpdateMasks(state);
 			}
-			debounceUpdateMasks();
 		}
 	}, null, context.subscriptions);
+
+	context.subscriptions.push({
+		dispose: () => {
+			for (const editor of Array.from(states.keys())) {
+				untrack(editor);
+			}
+		}
+	});
 }
 
 export function deactivate() {}
