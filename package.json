@@ -189,11 +189,11 @@
 	},
 	"main": "./out/extension.js",
 	"scripts": {
-		"vscode:prepublish": "yarn run compile",
+		"vscode:prepublish": "npm run compile",
 		"compile": "tsc -p ./",
 		"lint": "eslint src --ext ts",
 		"watch": "tsc -watch -p ./",
-		"postinstall": "./node_modules/.bin/electron-rebuild -f -v 7.1.0",
+		
 		"test": "npm run compile && node ./out/test/prettify-import.test.js"
 	},
 	"devDependencies": {
