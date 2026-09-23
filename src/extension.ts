@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as path from "path";
 import MaskController from "./mask-controller";
 import ScopedDocument from "./scoped-document";
+import { registerImportPrettifySymbols } from "./import-command";
 
 /**
  * A wrapper around fs.readFile which returns a Promise
@@ -281,6 +282,8 @@ export function activate(context: vscode.ExtensionContext) {
 			}
 		}
 	}, null, context.subscriptions);
+
+	context.subscriptions.push(registerImportPrettifySymbols());
 
 	context.subscriptions.push({
 		dispose: () => {

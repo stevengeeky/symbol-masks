@@ -18,6 +18,13 @@
 	],
 	"icon": "screenshots/mask.png",
 	"contributes": {
+		"commands": [
+			{
+				"command": "symbol-masks.importPrettifySymbols",
+				"title": "Import prettify-symbols-mode substitutions",
+				"category": "Symbol Masks"
+			}
+		],
 		"configuration": {
 			"title": "Symbol Masks",
 			"properties": {
@@ -43,6 +50,11 @@
 								"ignoreCase": {
 									"type": "boolean",
 									"description": "Whether or not to set the 'ignore case' flag when creating a regex from the given pattern",
+									"default": "false"
+								},
+								"multiline": {
+									"type": "boolean",
+									"description": "Whether or not to set the 'multiline' flag when creating a regex from the given pattern, so that ^ and $ match at line boundaries instead of document boundaries",
 									"default": "false"
 								},
 								"replace": {
